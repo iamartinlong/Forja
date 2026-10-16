@@ -1,0 +1,10 @@
+# 本地二进制快验专用：仅起 infra（pgvector/redis/gitea），api/worker/web 走本地 make dev
+# 用法：docker compose -f docker-compose.yml -f compose.dev.yml up -d postgres redis gitea
+#       make dev  # 本地 :8080 + :5173 直连 infra 的 localhost 端口
+
+services:
+  # 复用主 compose 的 infra 定义，仅确保 api/worker 不被意外拉起
+  api:
+    profiles: ["app"]
+  worker:
+    profiles: ["app"]

@@ -1,0 +1,7 @@
+injection:
+  sql:
+    forbidden: ["string concat in SQL"]
+    required: ["pgx parameterized"]
+secrets:
+  pattern: "(?i)(api[_-]?key|secret)\\s*[:=]\\s*['\"][^'\"]+['\"]"
+  action: block

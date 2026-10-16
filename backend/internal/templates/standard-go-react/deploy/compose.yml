@@ -1,0 +1,18 @@
+# 客户环境运行清单模板（随交付包提供；按实际环境调整）
+# 镜像：以交付包 delivery.json 中的 image/tag 为准（docker load 后即为该 tag）
+services:
+  app:
+    image: {{slug}}:latest
+    ports: ["8080:8080"]
+    environment:
+      PORT: "8080"
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:8080/health"]
+      interval: 15s
+      timeout: 3s
+      retries: 5
+      start_period: 10s
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits: { cpus: "1", memory: 512M }

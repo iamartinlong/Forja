@@ -1,0 +1,42 @@
+.env
+.env.local
+*.local
+auth_temp.json
+forja_auth.json
+node_modules
+dist
+backend/forja_test*.exe
+frontend/dist
+.opencode/cache
+
+# Go coverage artifacts
+*.out
+cover_api
+cover_vec
+frontend/test-results
+
+# Gitea bring-up credentials (local only)
+deploy/gitea/*.local
+
+deploy/gitea/*.env
+deploy/gitea/runner-config.yaml
+deploy/monitoring/prom-data/
+# §2d 本地存储（宿主绝对路径 D:/opencode/SuperPM/uploads；内容不入库，保留 .gitkeep）
+uploads/*
+!uploads/.gitkeep
+deploy/minio-data/
+
+# site-docs cache (vitepress) (frontend/src/components/inbox/InboxConvertedPage.tsx:1)
+site-docs/.vitepress/cache
+site-docs/.vitepress/dist
+site-docs/node_modules
+
+# local dev logs
+*.log
+api.log
+web.log
+frontend/coverage/
+
+# local-only: 产库备份 dump 与临时产物不入库（KI/AGENTS 机密管理）
+deploy/pg-backups/
+tmp/

@@ -1,0 +1,17 @@
+entity_name: todo
+fields:
+  - name: id
+    type: uuid
+    primary_key: true
+    default: gen_random_uuid()
+  - name: title
+    type: varchar(256)
+    constraints: { not_null: true }
+  - name: completed
+    type: boolean
+    default: false
+  - name: created_at
+    type: timestamptz
+    default: now()
+indexes:
+  - fields: [created_at]

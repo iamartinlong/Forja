@@ -1,0 +1,11 @@
+# Contract-first — 契约先于实现 (Task 0)
+openapi: 3.0.3
+info: { title: Todo Contract, version: 1.0.0 }
+paths:
+  /todos:
+    post:
+      x-contract-test: true
+      responses: { '201': { description: Created } }
+    get:
+      x-contract-test: true
+      responses: { '200': { description: OK } }

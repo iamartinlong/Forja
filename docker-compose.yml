@@ -1,0 +1,302 @@
+services:
+  postgres:
+    image: pgvector/pgvector:pg16
+    environment:
+      POSTGRES_DB: forja
+      POSTGRES_USER: forja
+      POSTGRES_PASSWORD: forja
+    ports: ["5432:5432"]
+    volumes: [pgdata:/var/lib/postgresql/data]
+    # KI-011：默认 100 连接曾被占满且超级用户保留槽耗尽（psql 均无法进入）——
+    # 上限放宽到 150 留余量 + 5 个保留槽保证打满时应急诊断/备份仍可进入
+    command: ["postgres", "-c", "max_connections=150", "-c", "superuser_reserved_connections=5"]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U forja -d forja"]
+      interval: 5s
+      retries: 10
+    restart: unless-stopped # 引擎重启后自愈（2026-08-24 事故：无策略容器停摆致 worker 循环崩溃）
+
+  redis:
+    image: redis:7-alpine
+    command: ["redis-server", "--requirepass", "${FORJA_REDIS_PASSWORD:-5869b8417aec0cff138fe8f8b9bf7d16}"]
+    environment:
+      FORJA_REDIS_PASSWORD: ${FORJA_REDIS_PASSWORD:-5869b8417aec0cff138fe8f8b9bf7d16}
+    ports: ["6379:6379"]
+    healthcheck:
+      test: ["CMD-SHELL", "redis-cli -a $$FORJA_REDIS_PASSWORD ping | grep -q PONG"]
+      interval: 5s
+      retries: 10
+    restart: unless-stopped
+
+  opencode:
+    image: ghcr.io/anomalyco/opencode:latest
+    command: ["serve", "--port", "4096", "--hostname", "0.0.0.0", "--cors", "http://localhost:5173", "--cors", "http://localhost:3000"]
+    environment:
+      OPENCODE_SERVER_PASSWORD: ${OPENCODE_SERVER_PASSWORD:-forja-dev}
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+      FORJA_API_KEY: ${FORJA_API_KEY:-}
+      OPENAI_API_KEY: ${FORJA_API_KEY:-}
+    volumes:
+      # 只读挂载：agent 仅按设计读取仓库上下文（spec_refs/文件清单），交付物是
+      # JSON diff 由 worker apply——读写挂载曾被 agent 子代理直接写入生产源码树
+      # （backend/db/migrations/035 幻觉迁移混入镜像并试图迁移产库，2026-09-06 事故）
+      - ./:/workspace:ro
+      - ./opencode.json:/root/.config/opencode/opencode.json
+      - ./.opencode:/workspace/.opencode:ro
+      - opencode-cache:/root/.cache/opencode
+    ports: ["4096:4096"]
+    restart: unless-stopped
+
+  api:
+    build:
+      context: ./backend
+      target: api
+    ports: ["8080:8080"]
+    depends_on:
+      postgres: { condition: service_healthy }
+      redis: { condition: service_healthy }
+      opencode: { condition: service_started }
+    volumes:
+      - ./specs:/app/specs:ro
+      - ./rules:/app/rules:ro
+      - D:/opencode/SuperPM/uploads:/app/uploads
+      - ./opencode.json:/app/opencode.json
+    environment:
+      PORT: 8080
+      DATABASE_URL: postgres://forja:forja@postgres:5432/forja?sslmode=disable
+      REDIS_ADDR: redis:6379
+      FORJA_REDIS_PASSWORD: ${FORJA_REDIS_PASSWORD:-5869b8417aec0cff138fe8f8b9bf7d16}
+      OPENCODE_URL: http://opencode:4096
+      OPENCODE_USERNAME: opencode
+      OPENCODE_PASSWORD: ${OPENCODE_PASSWORD:-forja-dev}
+      # provider_sync 落盘脱敏用：live key 与该 env 一致时还原 {env:FORJA_API_KEY} 占位符
+      FORJA_API_KEY: ${FORJA_API_KEY:-}
+      # M-CICD-4：Gitea 集成（未配 token 时自动跳过集成）
+      GITEA_URL: http://gitea:3000
+      GITEA_TOKEN: ${GITEA_TOKEN:-}
+      GITEA_WEBHOOK_SECRET: ${GITEA_WEBHOOK_SECRET:-forja-dev-hook}
+      # §2d 存储抽象：本地默认（/app/uploads 宿主绝对路径挂载，见 AGENTS.md #12）
+      FORJA_STORAGE_DRIVER: ${FORJA_STORAGE_DRIVER:-local}
+      LOCAL_ROOT: /app/uploads
+      S3_ENDPOINT: ${FORJA_S3_ENDPOINT:-http://minio:9000}
+      S3_BUCKET: ${FORJA_S3_BUCKET:-forja}
+      S3_REGION: ${FORJA_S3_REGION:-us-east-1}
+      S3_ACCESS_KEY: ${FORJA_S3_ACCESS_KEY:-minioadmin}
+      S3_SECRET: ${FORJA_S3_SECRET:-minioadmin}
+      S3_PATH_STYLE: "true"
+    read_only: true
+    tmpfs:
+      - /tmp
+    restart: unless-stopped
+
+  worker:
+    build:
+      context: ./backend
+      target: worker
+    command: ["/app/worker"]
+    depends_on:
+      postgres: { condition: service_healthy }
+      redis: { condition: service_healthy }
+      opencode: { condition: service_started }
+    volumes:
+      - ./specs:/app/specs:ro
+      - ./rules:/app/rules:ro
+      - D:/opencode/SuperPM/uploads:/app/uploads
+      - ./opencode.json:/app/opencode.json
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:8081/ready"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+    environment:
+      GITEA_URL: http://gitea:3000
+      GITEA_TOKEN: ${GITEA_TOKEN:-}
+      GITEA_SELF_REPO: forja-admin/forja
+      DATABASE_URL: postgres://forja:forja@postgres:5432/forja?sslmode=disable
+      REDIS_ADDR: redis:6379
+      FORJA_REDIS_PASSWORD: ${FORJA_REDIS_PASSWORD:-5869b8417aec0cff138fe8f8b9bf7d16}
+      OPENCODE_URL: http://opencode:4096
+      OPENCODE_USERNAME: opencode
+      OPENCODE_PASSWORD: ${OPENCODE_PASSWORD:-forja-dev}
+      # 同 api：provider_sync 落盘脱敏映射用
+      FORJA_API_KEY: ${FORJA_API_KEY:-}
+      # go mod tidy 下载目录（rootfs 只读；复用已授权的 .cache tmpfs，2026-09-08）
+      GOMODCACHE: /home/forja/.cache/go-mod
+      # S3.5 锻造真实性：clone/push 项目仓 + 工作副本根；产物仓覆盖率门禁（小仓放宽）
+      FORGE_WORKDIR: /tmp/forja-work
+      COVERAGE_MIN: "60"
+      # §2d 存储抽象（随 api 一致；worker 未来可能清理/迁移）
+      FORJA_STORAGE_DRIVER: ${FORJA_STORAGE_DRIVER:-local}
+      LOCAL_ROOT: /app/uploads
+      S3_ENDPOINT: ${FORJA_S3_ENDPOINT:-http://minio:9000}
+      S3_BUCKET: ${FORJA_S3_BUCKET:-forja}
+      S3_REGION: ${FORJA_S3_REGION:-us-east-1}
+      S3_ACCESS_KEY: ${FORJA_S3_ACCESS_KEY:-minioadmin}
+      S3_SECRET: ${FORJA_S3_SECRET:-minioadmin}
+      S3_PATH_STYLE: "true"
+    read_only: true
+    tmpfs:
+      - /tmp:exec,mode=1777,size=1G
+      - /tmp/forja-work
+      # go vet/test 构建缓存：与 deploy/compose.app.yml 同因同治（uid/gid/mode/exec 缺一不可）
+      - /home/forja/.cache:uid=1000,gid=1000,mode=1777,size=512M,exec
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits: { cpus: "2", memory: 4G }
+
+  # ---------- CI/CD 底座（M-CICD-1，design: architecture/cicd-design.md §3）----------
+
+  gitea-db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: gitea
+      POSTGRES_USER: gitea
+      POSTGRES_PASSWORD: ${GITEA_DB_PASSWORD}
+    volumes: [gitea-dbdata:/var/lib/postgresql/data]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U gitea"]
+      interval: 5s
+      retries: 10
+    restart: unless-stopped
+
+  gitea:
+    image: gitea/gitea:1.24
+    depends_on:
+      gitea-db: { condition: service_healthy }
+    environment:
+      GITEA__database__DB_TYPE: postgres
+      GITEA__database__HOST: gitea-db:5432
+      GITEA__database__NAME: gitea
+      GITEA__database__USER: gitea
+      GITEA__database__PASSWD: ${GITEA_DB_PASSWORD}
+      GITEA__server__DOMAIN: gitea # Registry token realm 主机名：三方解析——DinD/job(extra_hosts)、Windows(hosts 文件)
+      GITEA__server__ROOT_URL: http://gitea:3000/
+      GITEA__security__INSTALL_LOCK: "true"
+      GITEA__service__DISABLE_REGISTRATION: "true"
+      GITEA__packages__ENABLED: "true" # 内置 Container Registry（D4）
+      GITEA__actions__DEFAULT_ACTIONS_URL: "https://gitea.com" # actions/checkout 等从 gitea.com 镜像解析
+      GITEA__webhook__ALLOWED_HOST_LIST: "private,loopback" # 允许投递到 compose 内网 api（M-CICD-4b）
+    ports: ["3000:3000", "2222:22"]
+    volumes: [gitea-data:/data]
+    networks:
+      default:
+      forja-net:
+        ipv4_address: 172.30.0.10 # 固定 IP：供 DinD 内 job 经 --add-host 直连（M-CICD-3）
+    deploy:
+      resources:
+        limits: { cpus: "1", memory: 1G }
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3000/api/healthz"]
+      interval: 10s
+      retries: 12
+    restart: unless-stopped
+
+  runner:
+    image: gitea/runner:3-dind-rootless
+    restart: always
+    privileged: true
+    # DinD 内 dockerd 允许对本地 Gitea Registry 走 HTTP（S3-CD）
+    command: ["--insecure-registry=gitea:3000"]
+    # Ubuntu/Debian 宿主需追加： security_opt: ["apparmor=rootlesskit"]（Windows/WSL2 无 AppArmor，暂省略）
+    depends_on:
+      gitea: { condition: service_healthy, restart: true }
+    environment:
+      CONFIG_FILE: /config.yaml
+      GITEA_INSTANCE_URL: http://gitea:3000
+      GITEA_RUNNER_REGISTRATION_TOKEN: ${GITEA_RUNNER_TOKEN}
+      GITEA_RUNNER_NAME: forja-runner
+      DOCKER_HOST: unix:///var/run/user/1000/docker.sock
+      DOCKERD_ROOTLESS_ROOTLESSKIT_NET: slirp4netns
+      DOCKERD_ROOTLESS_ROOTLESSKIT_MTU: "65520"
+    extra_hosts:
+      - "gitea:172.30.0.10" # DinD 守护进程解析 gitea 走 forja-net 固定 IP，避免走 default 网桥 172.18.0.9 导致 no route
+    volumes:
+      - ./deploy/gitea/runner-config.yaml:/config.yaml:ro
+      - ./deploy/gitea/dind-daemon.json:/home/rootless/.config/docker/daemon.json:ro # DinD insecure registry（S3-CD）
+      - ./deploy/gitea/s6-gitea-runner-run:/etc/s6/gitea-runner/run:ro # s6 自愈：dockerd 就绪通知不可靠时 3min 超时也启动 act_runner（2026-09-03）
+      - runner-data:/data # 非 sock 模式，无宿主 docker.sock 挂载（D1）
+    networks:
+      default:
+      forja-net:
+    ports: ["8088:8088"] # cache server 显式发布（容器模式 cache.host 必需）
+
+  socket-proxy:
+    image: tecnativa/docker-socket-proxy
+    environment:
+      CONTAINERS: "1"
+      IMAGES: "1"
+      NETWORKS: "1"
+      POST: "1"
+      ALLOW_RESTARTS: "1"
+      EXEC: "0"
+      VOLUMES: "0"
+      SWARM: "0"
+    volumes: ["/var/run/docker.sock:/var/run/docker.sock:ro"]
+    networks:
+      default:
+      forja-net:
+        ipv4_address: 172.30.0.20 # 固定 IP：CD job 经 DOCKER_HOST=tcp://socket-proxy:2375 访问（S3-CD）
+    restart: unless-stopped
+
+  # ---- §2d 存储抽象：MinIO（profiles:["storage"]，默认拓扑不变）----
+  minio:
+    image: minio/minio:latest
+    profiles: ["storage"]
+    command: ["server", "/data", "--console-address", ":9001"]
+    environment:
+      MINIO_ROOT_USER: ${FORJA_S3_ACCESS_KEY:-minioadmin}
+      MINIO_ROOT_PASSWORD: ${FORJA_S3_SECRET:-minioadmin}
+    volumes:
+      - minio-data:/data
+    ports: ["9000:9000", "9001:9001"]
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
+      interval: 10s
+      retries: 10
+      start_period: 10s
+    restart: unless-stopped
+
+  # ---- S4 #4b 监控栈（dev 全栈版；抓取 api:8080 / worker:8081）----
+  # M2 常关：默认不随 up -d 起；需要时 --profile monitoring up -d（宿主内存优化）
+  prometheus:
+    image: prom/prometheus:v3.1.0
+    profiles: ["monitoring"]
+    volumes:
+      - ./deploy/monitoring/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - ./deploy/monitoring/alerts.yml:/etc/prometheus/alerts.yml:ro
+      - prom-data:/prometheus
+    ports: ["9090:9090"]
+    networks: [default]
+    restart: unless-stopped
+
+  grafana:
+    image: grafana/grafana:11.5.0
+    profiles: ["monitoring"]
+    environment:
+      GF_SECURITY_ADMIN_PASSWORD: "${GRAFANA_ADMIN_PASSWORD:?GRAFANA_ADMIN_PASSWORD required - runner.envs or deploy/monitoring/grafana.local}"
+      GF_AUTH_ANONYMOUS_ENABLED: "true"
+      GF_AUTH_ANONYMOUS_ORG_ROLE: Viewer
+    volumes:
+      - ./deploy/monitoring/grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./deploy/monitoring/grafana/dashboards:/var/lib/grafana/dashboards:ro
+    ports: ["3001:3000"]
+    networks: [default]
+    restart: unless-stopped
+
+volumes:
+  pgdata:
+  opencode-cache:
+  gitea-data:
+  gitea-dbdata:
+  runner-data:
+  prom-data:
+  minio-data:
+
+networks:
+  forja-net:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 172.30.0.0/24

@@ -1,0 +1,11 @@
+language: go
+naming:
+  package: snake_case
+  exported: PascalCase
+  unexported: camelCase
+format:
+  linter: golangci-lint
+  max_line_length: 120
+forbidden:
+  - "fmt.Println in production"
+  - "hardcoded secret"

@@ -1,0 +1,18 @@
+# 客户环境运行清单模板（随交付包提供；按实际环境调整）
+# 镜像：以交付包 delivery.json 中的 image/tag 为准（docker load 后即为该 tag）
+services:
+  app:
+    image: {{slug}}:latest
+    ports: ["8080:8080"]
+    environment:
+      PORT: "8080"
+    healthcheck:
+      test: ["CMD", "python3", "-c", "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:8080/{{opt.health_path}}', timeout=3).status==200 else 1)"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits: { cpus: "1", memory: 512M }

@@ -1,0 +1,11 @@
+story_id: S-TODO-1
+title: 用户可创建 Todo
+description: 作为用户，我想创建 Todo 以便追踪任务
+acceptance_criteria:
+  - given: 用户已登录
+    when: POST /todos {title: "买牛奶"}
+    then: 返回 201 且 GET /todos 包含该条
+  - given: 标题为空
+    when: POST /todos {title: ""}
+    then: 返回 400 且错误码 TITLE_REQUIRED
+priority: P0

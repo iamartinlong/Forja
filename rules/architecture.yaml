@@ -1,0 +1,8 @@
+layers:
+  - interaction
+  - orchestration
+  - capability
+  - infrastructure
+forbidden_deps:
+  - "infrastructure -> interaction"
+  - "capability -> interaction"

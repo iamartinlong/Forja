@@ -1,0 +1,9 @@
+.git
+.gitignore
+.gitea
+node_modules
+npm-debug.log*
+Dockerfile
+deploy
+README.md
+test

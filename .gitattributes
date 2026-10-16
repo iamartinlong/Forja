@@ -1,0 +1,5 @@
+# Shell 脚本一律 LF（Windows autocrlf 下 CRLF 会毒死 shebang / s6 run 脚本）
+*.sh text eol=lf
+deploy/gitea/s6-gitea-runner-run text eol=lf
+*.yml text eol=lf
+*.yaml text eol=lf

@@ -1,0 +1,16 @@
+version: 1
+type: fullstack
+stack:
+  backend:  { lang: go, framework: net/http }
+  frontend: { framework: react, bundler: vite }
+test:
+  unit: "go test ./..."
+  frontend: "npm test --prefix frontend"
+build:
+  dockerfile: "Dockerfile"
+  context: "."
+  image: ""
+run:
+  port: 8080
+  health: "/health"
+coverage_gate: 70

@@ -1,0 +1,6 @@
+query:
+  max_complexity: 100
+cache:
+  required_for: ["GET /specs", "GET /tasks"]
+concurrency:
+  max: 50

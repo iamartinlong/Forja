@@ -1,0 +1,7 @@
+{
+  "clarification_marker": "NEEDS CLARIFICATION",
+  "bs_how_keywords": ["React", "Fiber", "Redis", "Postgres", "pgvector"],
+  "untestable_phrases": ["体验良好"],
+  "exception_markers": ["400", "exception", "异常", "TITLE_REQUIRED"],
+  "non_functional_markers": ["performance", "concurrency", "并发", "性能"]
+}

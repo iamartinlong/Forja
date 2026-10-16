@@ -1,0 +1,10 @@
+# S4-3 镜像瘦身：裁剪构建上下文，降 DinD 3.8G 红线压力
+.git
+.gitignore
+*.log
+*.out
+*_test.go
+/vendor/.git
+/tmp
+/api.log
+/web.log

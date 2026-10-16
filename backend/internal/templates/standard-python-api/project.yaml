@@ -1,0 +1,16 @@
+version: 2
+type: backend
+stack:
+  backend:  { lang: python, framework: "fastapi", runtime: "{{opt.python_version}}" }
+test:
+  unit: "python3 -m pytest -q --cov=src --cov-report=lcov:coverage/lcov.info"
+  needs_db: false
+  coverage: { file: "coverage/lcov.info", format: lcov }
+build:
+  dockerfile: "Dockerfile"
+  context: "."
+  image: ""
+run:
+  port: 8080
+  health: "/{{opt.health_path}}"
+coverage_gate: 0

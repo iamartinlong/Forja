@@ -1,0 +1,15 @@
+version: 2
+type: backend
+stack:
+  backend:  { lang: node, framework: "node:http", runtime: "20" }
+test:
+  unit: "npm test"
+  needs_db: false
+build:
+  dockerfile: "Dockerfile"
+  context: "."
+  image: ""
+run:
+  port: 8080
+  health: "/health"
+coverage_gate: 0

@@ -1,0 +1,9 @@
+rules:
+  completeness: { enabled: true, blocking: true }
+  exception: { blocking: true }
+  non_functional: { enabled: true, blocking: true }
+  consistency: { blocking: true }
+  testability: { blocking: true, llm_assist: false }
+  clarification: { blocking: true }
+  constitution: { max_projects: 3 }
+  contracts: { blocking: true }

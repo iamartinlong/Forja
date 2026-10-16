@@ -1,0 +1,14 @@
+{
+  "name": "{{slug}}",
+  "version": "1.0.0",
+  "private": true,
+  "description": "{{name}} — FORJA Node 标准栈骨架",
+  "main": "src/server.js",
+  "scripts": {
+    "start": "node src/server.js",
+    "test": "node --test test/*.test.js"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}

@@ -1,0 +1,10 @@
+coverage: { line: 80 }
+framework: go_test
+naming: Test<Method>_<Scenario>
+mock: { allowed: ["testify/mock"], forbidden: ["monkey patch"] }
+validation:
+  contract: { enabled: true, blocking: true }
+  static: { enabled: true, blocking: true }
+  unit: { required_pass: 100, blocking: true }
+  max_fix_attempts: 3
+  converge: { enabled: true, blocking: true }

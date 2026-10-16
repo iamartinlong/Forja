@@ -1,0 +1,8 @@
+# S4-3 镜像瘦身：裁剪前端构建上下文（456MB node_modules 不进 daemon）
+node_modules
+dist
+coverage
+test-results
+playwright-report
+*.log
+.git

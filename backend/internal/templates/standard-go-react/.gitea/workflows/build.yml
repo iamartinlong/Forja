@@ -1,0 +1,39 @@
+name: Build
+
+# 项目构建流水线（由 FORJA 触发 workflow_dispatch）：
+#   1) 构建镜像并推送 Gitea registry（tag master-<sha8>）
+#   2) 导出镜像 tar 回传 FORJA（交付包制品；best-effort）
+on:
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    container:
+      # docker:27-cli 无 node，actions/checkout 会 127（run356 实录）；
+      # 统一用 FORJA 烘焙工具链镜像（docker CLI + node/git/curl）
+      image: gitea:3000/forja-admin/docker-cli:v1
+    env:
+      # 用 job 自带 DinD daemon（默认 DOCKER_HOST）；socket-proxy 仅放行受限 API，
+      # buildkit 会话升级被 403（run357 实录），故此处不设 DOCKER_HOST
+      IMAGE: gitea:3000/{{repo}}
+      # M2 端口收口：api 宿主运维口 18080（host.docker.internal 专供 DinD 回传）
+      FORJA_API: http://host.docker.internal:18080
+      PROJECT_ID: "{{project_id}}"
+    steps:
+      - uses: http://gitea:3000/forja-admin/actions-checkout@v4
+      - name: build & push
+        run: |
+          TAG="${GITHUB_REF_NAME:-master}-$(echo "$GITHUB_SHA" | cut -c1-8)"
+          docker build -t "$IMAGE:$TAG" .
+          echo "${{ secrets.REGISTRY_TOKEN }}" | docker login gitea:3000 -u "${{ secrets.REGISTRY_USER }}" --password-stdin
+          docker push "$IMAGE:$TAG"
+      - name: export image for delivery (best-effort)
+        continue-on-error: true
+        run: |
+          TAG="${GITHUB_REF_NAME:-master}-$(echo "$GITHUB_SHA" | cut -c1-8)"
+          docker save "$IMAGE:$TAG" | gzip | curl -fsS -X POST \
+            -H "X-Forja-Token: ${{ secrets.FORJA_INTERNAL_TOKEN }}" \
+            -H "Content-Type: application/gzip" \
+            --data-binary @- \
+            "$FORJA_API/api/v1/internal/delivery/artifact?project_id=$PROJECT_ID&sha=$GITHUB_SHA"

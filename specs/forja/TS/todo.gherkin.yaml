@@ -1,0 +1,18 @@
+test_suite: Todo CRUD
+scenarios:
+  - name: 创建成功
+    given: 用户已登录
+    when: POST /todos {title: "买牛奶"}
+    then: status 201 且 body.title == "买牛奶"
+  - name: 标题为空
+    given: 用户已登录
+    when: POST /todos {title: ""}
+    then: status 400 且 body.code == "TITLE_REQUIRED"
+  - name: 列表包含
+    given: 已创建 1 条 Todo
+    when: GET /todos
+    then: status 200 且 body.length == 1
+assertions:
+  - type: status_code
+    expected: 201
+coverage: { line: 80 }

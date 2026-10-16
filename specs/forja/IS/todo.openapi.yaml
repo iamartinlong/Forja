@@ -1,0 +1,21 @@
+openapi: 3.0.3
+info: { title: Todo API, version: 1.0.0 }
+paths:
+  /todos:
+    post:
+      summary: 创建 Todo
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/CreateTodo' }
+      responses:
+        '201': { description: Created, content: { application/json: { schema: { $ref: '#/components/schemas/Todo' } } } }
+        '400': { description: Bad Request }
+    get:
+      summary: 列表
+      responses: { '200': { description: OK } }
+components:
+  schemas:
+    CreateTodo: { type: object, required: [title], properties: { title: { type: string, maxLength: 256 } } }
+    Todo: { allOf: [{ $ref: '#/components/schemas/CreateTodo' }, { type: object, properties: { id: { type: string, format: uuid }, completed: { type: boolean } } }] }
